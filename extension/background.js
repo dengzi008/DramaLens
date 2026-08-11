@@ -398,6 +398,38 @@ async function retranscribeDesktopRecording() {
   }
 }
 
+async function batchRequest(path, method = "GET", payload = null) {
+  const response = await fetch(`http://127.0.0.1:3211${path}`, {
+    method,
+    headers: payload ? { "Content-Type": "application/json" } : undefined,
+    body: payload ? JSON.stringify(payload) : undefined
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || `批量服务返回 ${response.status}`);
+  return result;
+}
+
+async function importBatchProject() {
+  const results = await batchRequest("/api/batch/results");
+  const project = await readProjectState();
+  const episodes = [...(project.episodes || [])];
+  for (const item of results.episodes || []) {
+    if (!item.segments?.length) continue;
+    const episode = {
+      episode: item.episode,
+      filename: item.filename || "",
+      segments: item.segments,
+      analysis: item.analysis || null,
+      updatedAt: Date.now()
+    };
+    const index = episodes.findIndex(existing => String(existing.episode) === String(episode.episode));
+    if (index >= 0) episodes[index] = episode;
+    else episodes.push(episode);
+  }
+  episodes.sort((a, b) => episodeNumber(a.episode) - episodeNumber(b.episode));
+  return writeProjectState({ ...project, title: results.title || project.title, episodes, seriesReports: {} });
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const session = await chrome.storage.session.get("recordingState");
   const local = await chrome.storage.local.get("transcriptionState");
@@ -439,6 +471,38 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.type === "DESKTOP_RECORDING_RETRANSCRIBE") {
         const result = await retranscribeDesktopRecording();
         sendResponse({ ok: true, ...result });
+        return;
+      }
+      if (message.type === "BATCH_GET_STATE") {
+        sendResponse({ ok: true, state: await batchRequest("/api/batch/status") });
+        return;
+      }
+      if (message.type === "BATCH_START") {
+        sendResponse({ ok: true, state: await batchRequest("/api/batch/start", "POST", message.payload) });
+        return;
+      }
+      if (message.type === "BATCH_NEXT") {
+        sendResponse({ ok: true, state: await batchRequest("/api/batch/next", "POST") });
+        return;
+      }
+      if (message.type === "BATCH_FINISH") {
+        sendResponse({ ok: true, state: await batchRequest("/api/batch/finish", "POST") });
+        return;
+      }
+      if (message.type === "BATCH_RETRY") {
+        sendResponse({ ok: true, state: await batchRequest("/api/batch/retry", "POST", { episode: message.episode }) });
+        return;
+      }
+      if (message.type === "BATCH_AI_START") {
+        sendResponse({ ok: true, state: await batchRequest("/api/batch/ai/start", "POST") });
+        return;
+      }
+      if (message.type === "BATCH_CONTROLLER_OPEN") {
+        sendResponse({ ok: true, state: await batchRequest("/api/batch/controller/open", "POST") });
+        return;
+      }
+      if (message.type === "BATCH_IMPORT_PROJECT") {
+        sendResponse({ ok: true, state: await importBatchProject() });
         return;
       }
       if (message.type === "TRANSCRIPTION_GET_STATE") {

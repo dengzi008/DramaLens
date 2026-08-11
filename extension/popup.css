@@ -162,6 +162,12 @@ h2 { margin: 0; font-size: 14px; }
 }
 .analysis-panel { border-color: #eadcf8; }
 .project-panel { border-color: #f4d7b3; }
+.batch-panel { border-color: #b8d8ff; }
+.batch-fields { display: grid; grid-template-columns: 1fr 78px 78px; gap: 8px; margin-top: 10px; }
+.batch-fields label { color: #5f6368; font-size: 11px; }
+.batch-fields input { width: 100%; margin-top: 4px; padding: 7px 8px; border: 1px solid #dadce0; border-radius: 6px; }
+.batch-episode-list { max-height: 180px; margin: 10px 0 0; padding: 0; overflow: auto; list-style: none; }
+.batch-episode-list li { display: grid; grid-template-columns: 62px 1fr auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid #eef2f7; font-size: 12px; }
 .full-field,
 .project-save-row label { color: #5f6368; font-size: 11px; }
 .full-field { display: block; margin-top: 10px; }

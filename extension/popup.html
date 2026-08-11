@@ -13,6 +13,30 @@
         <span class="badge running">本地处理</span>
       </header>
 
+      <section class="panel batch-panel">
+        <div class="section-title">
+          <h2>连续多集采集</h2>
+          <span id="batchBadge">未启动</span>
+        </div>
+        <div class="batch-fields">
+          <label>剧名<input id="batchTitle" type="text" placeholder="例如：命中注定缘归来" /></label>
+          <label>起始集<input id="batchStartEpisode" type="number" min="1" value="1" /></label>
+          <label>结束集<input id="batchEndEpisode" type="number" min="1" placeholder="可选" /></label>
+        </div>
+        <p id="batchHint" class="record-hint">每集结束只需按一次F8；上一集在后台完整识别，下一集立即开始录音。</p>
+        <div class="inline-actions">
+          <button id="batchStartBtn" class="primary">开始连续采集</button>
+          <button id="batchNextBtn">本集结束→下一集</button>
+          <button id="batchFinishBtn">结束全部</button>
+          <button id="batchControllerBtn">打开置顶控制器</button>
+        </div>
+        <div class="inline-actions">
+          <button id="batchAiBtn">批量AI校对并拆解</button>
+          <button id="batchImportBtn">导入多集项目</button>
+        </div>
+        <ol id="batchEpisodeList" class="batch-episode-list"></ol>
+      </section>
+
       <section class="panel project-panel">
         <div class="section-title">
           <h2>多集项目</h2>
@@ -58,9 +82,9 @@
         <p id="desktopRecordHint" class="record-hint">录制 Windows 正在播放的声音，适用于红果短剧 App。</p>
         <div class="record-actions">
           <button id="desktopRecordStartBtn" class="primary">开始桌面录音</button>
-          <button id="desktopRecordStopBtn">停止并识别</button>
+          <button id="desktopRecordStopBtn">停止并完整识别</button>
           <button id="desktopRecordCancelBtn">取消</button>
-          <button id="desktopRetranscribeBtn">完整模式重新识别</button>
+          <button id="desktopRetranscribeBtn">重新完整识别</button>
         </div>
       </section>
 

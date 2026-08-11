@@ -18,6 +18,8 @@ from docx.shared import Pt
 import numpy as np
 import soundcard as sc
 
+from batch_capture import BatchManager
+
 
 PROJECT_DIR = Path(__file__).resolve().parent
 PORT = int(os.getenv("ASR_PORT", "3211"))
@@ -148,7 +150,7 @@ class DesktopRecorder:
                 raise ValueError("录音不足1秒，请播放内容后再停止。")
             self.status = "processing"
         try:
-            result = transcribe(file_path, vad_filter=True)
+            result = transcribe(file_path, vad_filter=False)
             if not result["segments"]:
                 raise ValueError("没有识别到有效语音，请确认红果 App 正在播放且系统音量正常。")
             result["filename"] = output_name
@@ -234,7 +236,7 @@ def get_model():
     return _model
 
 
-def transcribe(audio_path, vad_filter=True):
+def transcribe(audio_path, vad_filter=False):
     model = get_model()
     segment_stream, info = model.transcribe(
         str(audio_path),
@@ -572,6 +574,13 @@ def build_series_docx(payload):
     return buffer.getvalue()
 
 
+_batch_manager = BatchManager(
+    PROJECT_DIR,
+    transcribe_fn=lambda path: transcribe(path, vad_filter=False),
+    analyze_fn=analyze_project,
+)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "LocalASR/1.0"
 
@@ -635,13 +644,75 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as error:
                 self.send_json(403, {"error": str(error)})
             return
+        if route == "/api/batch/status":
+            try:
+                self.require_local_client()
+                self.send_json(200, _batch_manager.status())
+            except Exception as error:
+                self.send_json(403, {"error": str(error)})
+            return
+        if route == "/api/batch/results":
+            try:
+                self.require_local_client()
+                self.send_json(200, _batch_manager.results())
+            except Exception as error:
+                self.send_json(403, {"error": str(error)})
+            return
         self.send_json(404, {"error": "Not found"})
 
     def do_POST(self):
         route = urlparse(self.path).path
+        if route == "/api/batch/start":
+            try:
+                self.require_local_client()
+                if _desktop_recorder.snapshot().get("status") in {"starting", "recording", "stopping", "processing"}:
+                    raise ValueError("单集桌面录音正在进行，请先停止。")
+                payload = self.read_json()
+                self.send_json(200, _batch_manager.start(payload.get("title"), payload.get("startEpisode"), payload.get("endEpisode")))
+            except Exception as error:
+                self.send_json(500, {"error": str(error) or "连续采集启动失败。"})
+            return
+        if route == "/api/batch/next":
+            try:
+                self.require_local_client()
+                self.send_json(200, _batch_manager.next_episode())
+            except Exception as error:
+                self.send_json(500, {"error": str(error) or "切换下一集失败。"})
+            return
+        if route == "/api/batch/finish":
+            try:
+                self.require_local_client()
+                self.send_json(200, _batch_manager.finish())
+            except Exception as error:
+                self.send_json(500, {"error": str(error) or "结束连续采集失败。"})
+            return
+        if route == "/api/batch/retry":
+            try:
+                self.require_local_client()
+                payload = self.read_json()
+                self.send_json(200, _batch_manager.retry(payload.get("episode")))
+            except Exception as error:
+                self.send_json(500, {"error": str(error) or "重新识别失败。"})
+            return
+        if route == "/api/batch/ai/start":
+            try:
+                self.require_local_client()
+                self.send_json(200, _batch_manager.start_ai())
+            except Exception as error:
+                self.send_json(500, {"error": str(error) or "批量AI启动失败。"})
+            return
+        if route == "/api/batch/controller/open":
+            try:
+                self.require_local_client()
+                self.send_json(200, _batch_manager.open_controller(PORT))
+            except Exception as error:
+                self.send_json(500, {"error": str(error) or "置顶控制器启动失败。"})
+            return
         if route == "/api/desktop-recording/start":
             try:
                 self.require_local_client()
+                if _batch_manager.status().get("status") == "recording":
+                    raise ValueError("连续多集采集正在进行，请先结束。")
                 payload = self.read_json()
                 self.send_json(200, _desktop_recorder.start(payload.get("title", "desktop-audio")))
             except Exception as error:

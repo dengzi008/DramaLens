@@ -1,5 +1,17 @@
 const elements = {
-  recordBadge: document.querySelector("#recordBadge")
+  batchBadge: document.querySelector("#batchBadge")
+  ,batchTitle: document.querySelector("#batchTitle")
+  ,batchStartEpisode: document.querySelector("#batchStartEpisode")
+  ,batchEndEpisode: document.querySelector("#batchEndEpisode")
+  ,batchHint: document.querySelector("#batchHint")
+  ,batchStartBtn: document.querySelector("#batchStartBtn")
+  ,batchNextBtn: document.querySelector("#batchNextBtn")
+  ,batchFinishBtn: document.querySelector("#batchFinishBtn")
+  ,batchControllerBtn: document.querySelector("#batchControllerBtn")
+  ,batchAiBtn: document.querySelector("#batchAiBtn")
+  ,batchImportBtn: document.querySelector("#batchImportBtn")
+  ,batchEpisodeList: document.querySelector("#batchEpisodeList")
+  ,recordBadge: document.querySelector("#recordBadge")
   ,recordHint: document.querySelector("#recordHint")
   ,recordStartBtn: document.querySelector("#recordStartBtn")
   ,recordStopBtn: document.querySelector("#recordStopBtn")
@@ -41,6 +53,7 @@ const elements = {
 };
 
 let latestRecordingState = null;
+let latestBatchState = null;
 let latestDesktopRecordingState = null;
 let latestTranscriptState = null;
 let latestAnalysis = null;
@@ -57,6 +70,88 @@ function transcriptSignature(state) {
     filename: state?.filename,
     segments: state?.segments || []
   });
+}
+
+const batchStatusText = {
+  queued: "等待识别",
+  transcribing: "识别中",
+  transcribed: "已识别",
+  error: "识别失败",
+  "ai-processing": "AI处理中",
+  complete: "AI完成",
+  "ai-error": "AI失败"
+};
+
+function renderBatch(state) {
+  latestBatchState = state;
+  const recording = state?.status === "recording";
+  const busy = ["recording", "pausing", "stopping", "processing"].includes(state?.status);
+  elements.batchStartBtn.disabled = busy;
+  elements.batchNextBtn.disabled = !recording;
+  elements.batchFinishBtn.disabled = !recording;
+  elements.batchAiBtn.disabled = state?.aiStatus === "processing" || !(state?.episodes || []).some(item => ["transcribed", "ai-error"].includes(item.status));
+  elements.batchImportBtn.disabled = !(state?.episodes || []).some(item => item.segmentCount);
+  if (recording) {
+    elements.batchBadge.textContent = `第${state.currentEpisode}集录制中`;
+    elements.batchHint.textContent = `当前 ${formatTime(state.currentDuration || 0)}；按F8结束本集并立即开始第${Number(state.currentEpisode) + 1}集。`;
+  } else if (state?.status === "processing") {
+    elements.batchBadge.textContent = "后台识别中";
+    elements.batchHint.textContent = "采集已结束，正在按顺序完整识别各集，可以关闭插件。";
+  } else if (state?.status === "ready") {
+    elements.batchBadge.textContent = "识别完成";
+    elements.batchHint.textContent = "可以批量AI校对并拆解，或先导入多集项目人工检查。";
+  } else if (state?.status === "interrupted" || state?.status === "error") {
+    elements.batchBadge.textContent = "任务异常";
+    elements.batchHint.textContent = state.error || "请检查失败集并重试。";
+  } else {
+    elements.batchBadge.textContent = "未启动";
+  }
+  if (state?.title && !elements.batchTitle.value) elements.batchTitle.value = state.title;
+  elements.batchEpisodeList.replaceChildren(...(state?.episodes || []).map(item => {
+    const row = document.createElement("li");
+    const label = document.createElement("strong");
+    const status = document.createElement("span");
+    const action = document.createElement("button");
+    label.textContent = item.label || `第${item.episode}集`;
+    status.textContent = `${batchStatusText[item.status] || item.status}${item.segmentCount ? ` · ${item.segmentCount}段` : ""}${item.deduplicated ? ` · 去重${item.deduplicated}` : ""}`;
+    action.textContent = "重试";
+    action.hidden = !["error", "ai-error"].includes(item.status);
+    action.addEventListener("click", () => batchCommand("BATCH_RETRY", { episode: item.episode }));
+    row.append(label, status, action);
+    return row;
+  }));
+}
+
+async function batchCommand(type, extra = {}) {
+  try {
+    let message = { type, ...extra };
+    if (type === "BATCH_START") {
+      const startEpisode = Number(elements.batchStartEpisode.value || 1);
+      const endEpisode = elements.batchEndEpisode.value ? Number(elements.batchEndEpisode.value) : null;
+      if (!elements.batchTitle.value.trim()) throw new Error("请先填写剧名。")
+      message.payload = { title: elements.batchTitle.value.trim(), startEpisode, endEpisode };
+    }
+    const response = await chrome.runtime.sendMessage(message);
+    if (!response?.ok) throw new Error(response?.error || "批量操作失败。")
+    if (type === "BATCH_IMPORT_PROJECT") {
+      latestProjectState = response.state;
+      renderProject(response.state);
+      elements.batchHint.textContent = `已导入${response.state.episodes?.length || 0}集到多集项目。`;
+      return;
+    }
+    if (response.state?.episodes) renderBatch(response.state);
+  } catch (error) {
+    elements.batchHint.textContent = error.message || "批量操作失败。";
+  }
+}
+
+async function refreshBatch() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "BATCH_GET_STATE" });
+    if (response?.ok) renderBatch(response.state);
+  } catch (error) {
+    elements.batchHint.textContent = "无法连接批量服务，请确认本地服务正在运行。";
+  }
 }
 
 async function currentTab() {
@@ -154,7 +249,7 @@ function renderDesktopRecording(state) {
     elements.desktopRecordHint.textContent = state.error || "桌面音频录制失败。";
   } else if (state?.status === "complete") {
     elements.desktopRecordBadge.textContent = "已完成";
-    elements.desktopRecordHint.textContent = "桌面录音已完成；如有漏句，可用完整模式重新识别。";
+    elements.desktopRecordHint.textContent = "桌面录音已完成；默认使用完整识别，如有漏句可重新完整识别。";
   } else {
     elements.desktopRecordBadge.textContent = "未录制";
     elements.desktopRecordHint.textContent = "录制 Windows 正在播放的声音，适用于红果短剧 App。";
@@ -687,6 +782,12 @@ function downloadJson(filename, payload) {
 }
 
 elements.recordStartBtn.addEventListener("click", () => recordingCommand("RECORDING_START"));
+elements.batchStartBtn.addEventListener("click", () => batchCommand("BATCH_START"));
+elements.batchNextBtn.addEventListener("click", () => batchCommand("BATCH_NEXT"));
+elements.batchFinishBtn.addEventListener("click", () => batchCommand("BATCH_FINISH"));
+elements.batchControllerBtn.addEventListener("click", () => batchCommand("BATCH_CONTROLLER_OPEN"));
+elements.batchAiBtn.addEventListener("click", () => batchCommand("BATCH_AI_START"));
+elements.batchImportBtn.addEventListener("click", () => batchCommand("BATCH_IMPORT_PROJECT"));
 elements.recordStopBtn.addEventListener("click", () => recordingCommand("RECORDING_STOP"));
 elements.desktopRecordStartBtn.addEventListener("click", () => desktopRecordingCommand("DESKTOP_RECORDING_START"));
 elements.desktopRecordStopBtn.addEventListener("click", () => desktopRecordingCommand("DESKTOP_RECORDING_STOP"));
@@ -722,12 +823,14 @@ elements.projectEpisode.addEventListener("input", () => {
 });
 
 refreshRecording();
+refreshBatch();
 refreshDesktopRecording();
 refreshTranscript();
 loadProjectState();
 refreshAnalysis();
 refreshProject();
 setInterval(refreshRecording, 1000);
+setInterval(refreshBatch, 1000);
 setInterval(refreshDesktopRecording, 1000);
 setInterval(refreshTranscript, 1000);
 setInterval(refreshAnalysis, 1000);
