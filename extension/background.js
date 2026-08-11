@@ -1,5 +1,5 @@
 const OFFSCREEN_URL = "offscreen.html";
-const ANALYSIS_SCHEMA_VERSION = "0.7.2-speaker-v1";
+const ANALYSIS_SCHEMA_VERSION = "0.8.2-speaker-v2";
 
 const defaultRecordingState = {
   status: "idle",
@@ -163,6 +163,12 @@ function base64ToArrayBuffer(value) {
   return bytes.buffer;
 }
 
+function resolvedSpeaker(manualValue, aiValue) {
+  const manual = String(manualValue || "").trim();
+  if (manual && manual !== "待确认") return manual;
+  return String(aiValue || "").trim() || manual || "待确认";
+}
+
 async function transcribeAudio(audio, filename) {
   const response = await fetch("http://127.0.0.1:3211/api/transcribe", {
     method: "POST",
@@ -235,7 +241,7 @@ async function runAnalysis(payload, payloadFingerprint) {
           : null);
       return {
         ...segment,
-        speaker: correction?.speaker?.trim() || segment.speaker || "待确认"
+        speaker: resolvedSpeaker(segment.speaker, correction?.speaker)
       };
     });
     if (segmentsWithSpeakers.length) {

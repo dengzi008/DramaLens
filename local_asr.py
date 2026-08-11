@@ -377,7 +377,7 @@ def analyze_project(payload):
     title = str(payload.get("title") or "未命名短剧").strip()
     episode = str(payload.get("episode") or "第1集").strip()
     prompt = f"""剧名：{title}\n集数：{episode}\n\n校对后的时间轴：\n{timeline_text(segments)}\n\n请严格输出JSON对象，不要Markdown代码块。"""
-    system = """你是中文短剧编剧顾问。请先结合上下文修正明显的同音错字，并根据人物关系、上下句问答和对白中的称谓为每句推断说话角色。优先使用对白可支持的姓名或称谓，例如“妞妞”“掌教”“师伯”“姐姐”“众长老”；只能判断身份时可写“女主”“母亲”“长老”，完全无法判断时speaker写“待确认”，不得强行编造姓名。每个id、时间和原顺序必须保持不变，不得把相邻台词错位。再进行原创创作分析，不复刻原作表达。输出JSON，字段必须为：corrected_segments（数组，元素含id/start/end/speaker/text）、summary（字符串）、episode_function（字符串，说明本集在整剧中的叙事功能，例如引入人物、建立冲突、升级矛盾、承上启下或制造付费悬念）、characters（字符串数组）、opening_hook（字符串）、conflict_nodes（字符串数组）、emotion_curve（字符串，按照开场→发展→高潮→结尾描述本集观众情绪如何变化）、reversals（字符串数组）、ending_hook（字符串）、creative_methods（字符串数组）、original_ideas（字符串数组）。不得虚构时间轴中不存在的关键剧情。"""
+    system = """你是中文短剧编剧顾问。请先结合上下文修正明显的同音错字，并根据人物关系、上下句问答和对白中的称谓为每句推断说话角色。时间轴中已经人工填写且不等于“待确认”的speaker是人工确认结果，必须原样保留；只允许为空白或“待确认”的speaker补充角色。优先使用对白可支持的姓名或称谓，例如“妞妞”“掌教”“师伯”“姐姐”“众长老”；只能判断身份时可写“女主”“母亲”“长老”，完全无法判断时speaker写“待确认”，不得强行编造姓名。每个id、时间和原顺序必须保持不变，不得把相邻台词错位。再进行原创创作分析，不复刻原作表达。输出JSON，字段必须为：corrected_segments（数组，元素含id/start/end/speaker/text）、summary（字符串）、episode_function（字符串，说明本集在整剧中的叙事功能，例如引入人物、建立冲突、升级矛盾、承上启下或制造付费悬念）、characters（字符串数组）、opening_hook（字符串）、conflict_nodes（字符串数组）、emotion_curve（字符串，按照开场→发展→高潮→结尾描述本集观众情绪如何变化）、reversals（字符串数组）、ending_hook（字符串）、creative_methods（字符串数组）、original_ideas（字符串数组）。不得虚构时间轴中不存在的关键剧情。"""
     result = parse_ai_json(call_ai(system, prompt))
     corrected = result.get("corrected_segments") or []
     corrected_by_id = {str(item.get("id")): item for item in corrected if isinstance(item, dict)}
@@ -390,12 +390,15 @@ def analyze_project(payload):
         proposed_text = str((correction or {}).get("text") or original_text).strip()
         similarity = SequenceMatcher(None, original_text, proposed_text).ratio() if original_text and proposed_text else 1
         safe_text = proposed_text if similarity >= 0.45 else original_text
+        original_speaker = str(original.get("speaker") or "").strip()
+        proposed_speaker = str((correction or {}).get("speaker") or "").strip()
+        safe_speaker = original_speaker if original_speaker and original_speaker != "待确认" else (proposed_speaker or original_speaker or "待确认")
         normalized_corrections.append(
             {
                 "id": original.get("id", index),
                 "start": original.get("start", 0),
                 "end": original.get("end", original.get("start", 0)),
-                "speaker": str((correction or {}).get("speaker") or original.get("speaker") or "待确认").strip(),
+                "speaker": safe_speaker,
                 "text": safe_text,
             }
         )

@@ -72,6 +72,12 @@ function formatTime(seconds) {
   return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
+function resolvedSpeaker(manualValue, aiValue) {
+  const manual = String(manualValue || "").trim();
+  if (manual && manual !== "待确认") return manual;
+  return String(aiValue || "").trim() || manual || "待确认";
+}
+
 function renderRecording(state) {
   latestRecordingState = state;
   const active = state.status === "recording" || state.status === "starting" || state.status === "stopping";
@@ -397,7 +403,7 @@ async function applyCorrections() {
       || (latestAnalysis.corrected_segments.length === originals.length ? latestAnalysis.corrected_segments[index] : null);
     return {
       ...original,
-      speaker: correction?.speaker?.trim() || original.speaker || "待确认",
+      speaker: resolvedSpeaker(original.speaker, correction?.speaker),
       text: correction?.text?.trim() || original.text
     };
   });
