@@ -320,6 +320,57 @@ async function stopRecording() {
   return readState();
 }
 
+async function fetchDesktopRecordingState() {
+  const response = await fetch("http://127.0.0.1:3211/api/desktop-recording/status");
+  const state = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(state.error || `桌面录音服务返回 ${response.status}`);
+  return state;
+}
+
+async function startDesktopRecording(message) {
+  const tabState = await readState();
+  if (["starting", "recording", "stopping"].includes(tabState.status)) {
+    throw new Error("标签页录音正在进行，请先停止。")
+  }
+  await clearAnalysisState();
+  await writeTranscriptionState({ status: "idle", filename: null, text: "", segments: [], error: null });
+  const response = await fetch("http://127.0.0.1:3211/api/desktop-recording/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: message.title || "桌面短剧" })
+  });
+  const state = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(state.error || `桌面录音服务返回 ${response.status}`);
+  return state;
+}
+
+async function stopDesktopRecording() {
+  await writeTranscriptionState({ status: "processing", filename: null, text: "", segments: [], error: null });
+  try {
+    const response = await fetch("http://127.0.0.1:3211/api/desktop-recording/stop", { method: "POST" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `桌面录音服务返回 ${response.status}`);
+    const transcriptionState = await writeTranscriptionState({
+      status: "complete",
+      filename: result.filename || "desktop-recording.wav",
+      text: result.text || "",
+      segments: result.segments || [],
+      error: null
+    });
+    return { state: await fetchDesktopRecordingState(), transcriptionState };
+  } catch (error) {
+    await writeTranscriptionState({ status: "error", error: error.message || "桌面录音识别失败。" });
+    throw error;
+  }
+}
+
+async function cancelDesktopRecording() {
+  const response = await fetch("http://127.0.0.1:3211/api/desktop-recording/cancel", { method: "POST" });
+  const state = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(state.error || `桌面录音服务返回 ${response.status}`);
+  return state;
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const session = await chrome.storage.session.get("recordingState");
   const local = await chrome.storage.local.get("transcriptionState");
@@ -339,6 +390,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     try {
       if (message.type === "RECORDING_GET_STATE") {
         sendResponse({ ok: true, state: await readState() });
+        return;
+      }
+      if (message.type === "DESKTOP_RECORDING_GET_STATE") {
+        sendResponse({ ok: true, state: await fetchDesktopRecordingState() });
+        return;
+      }
+      if (message.type === "DESKTOP_RECORDING_START") {
+        sendResponse({ ok: true, state: await startDesktopRecording(message) });
+        return;
+      }
+      if (message.type === "DESKTOP_RECORDING_STOP") {
+        const result = await stopDesktopRecording();
+        sendResponse({ ok: true, ...result });
+        return;
+      }
+      if (message.type === "DESKTOP_RECORDING_CANCEL") {
+        sendResponse({ ok: true, state: await cancelDesktopRecording() });
         return;
       }
       if (message.type === "TRANSCRIPTION_GET_STATE") {

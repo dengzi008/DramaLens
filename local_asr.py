@@ -1,18 +1,22 @@
 import json
 import os
 import tempfile
+import time
 import urllib.error
 import urllib.request
+import wave
 from difflib import SequenceMatcher
 from io import BytesIO
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Thread
 from urllib.parse import urlparse
 
 from faster_whisper import WhisperModel
 from docx import Document
 from docx.shared import Pt
+import numpy as np
+import soundcard as sc
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -45,6 +49,143 @@ AI_MODEL = os.getenv("AI_MODEL", "gpt-4.1-mini")
 
 _model = None
 _model_lock = Lock()
+
+
+class DesktopRecorder:
+    def __init__(self):
+        self.lock = Lock()
+        self.stop_event = Event()
+        self.thread = None
+        self.status = "idle"
+        self.error = None
+        self.started_at = None
+        self.frames = 0
+        self.sample_rate = 48000
+        self.channels = 2
+        self.file_path = None
+        self.output_name = None
+
+    def snapshot(self):
+        with self.lock:
+            duration = self.frames / self.sample_rate if self.sample_rate else 0
+            return {
+                "status": self.status,
+                "error": self.error,
+                "startedAt": self.started_at,
+                "duration": round(duration, 1),
+                "outputName": self.output_name,
+            }
+
+    def start(self, title="desktop-audio"):
+        with self.lock:
+            if self.status in {"starting", "recording", "stopping", "processing"}:
+                raise ValueError("已有桌面录音任务正在进行。")
+            safe_title = "".join("-" if char in '\\/:*?\"<>|' else char for char in str(title or "desktop-audio"))
+            safe_title = " ".join(safe_title.split())[:80] or "desktop-audio"
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            temp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            temp.close()
+            self.file_path = Path(temp.name)
+            self.output_name = f"{safe_title}-{timestamp}.wav"
+            self.stop_event.clear()
+            self.status = "starting"
+            self.error = None
+            self.started_at = int(time.time() * 1000)
+            self.frames = 0
+            self.thread = Thread(target=self._record_loop, daemon=True)
+            self.thread.start()
+        return self.snapshot()
+
+    def _record_loop(self):
+        try:
+            speaker = sc.default_speaker()
+            if speaker is None:
+                raise RuntimeError("没有找到默认扬声器，请先确认 Windows 声音输出设备可用。")
+            microphone = sc.get_microphone(id=str(speaker.name), include_loopback=True)
+            if microphone is None:
+                raise RuntimeError("无法创建 Windows WASAPI 回环录音设备。")
+            with wave.open(str(self.file_path), "wb") as wav_file:
+                wav_file.setnchannels(self.channels)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(self.sample_rate)
+                with microphone.recorder(samplerate=self.sample_rate, channels=self.channels) as recorder:
+                    with self.lock:
+                        self.status = "recording"
+                    while not self.stop_event.is_set():
+                        data = recorder.record(numframes=4800)
+                        if data is None or not len(data):
+                            continue
+                        pcm = (np.clip(data, -1.0, 1.0) * 32767).astype(np.int16)
+                        wav_file.writeframes(pcm.tobytes())
+                        with self.lock:
+                            self.frames += len(pcm)
+        except Exception as error:
+            with self.lock:
+                self.status = "error"
+                self.error = str(error) or "桌面音频录制失败。"
+
+    def stop_and_transcribe(self):
+        with self.lock:
+            if self.status not in {"starting", "recording"}:
+                raise ValueError(self.error or "当前没有正在进行的桌面录音。")
+            self.status = "stopping"
+            thread = self.thread
+            file_path = self.file_path
+            output_name = self.output_name
+        self.stop_event.set()
+        if thread:
+            thread.join(timeout=10)
+        if thread and thread.is_alive():
+            raise RuntimeError("停止桌面录音超时，请重启本地服务。")
+        with self.lock:
+            if self.error:
+                raise RuntimeError(self.error)
+            if self.frames < self.sample_rate:
+                raise ValueError("录音不足1秒，请播放内容后再停止。")
+            self.status = "processing"
+        try:
+            result = transcribe(file_path)
+            if not result["segments"]:
+                raise ValueError("没有识别到有效语音，请确认红果 App 正在播放且系统音量正常。")
+            result["filename"] = output_name
+            result["source"] = "desktop-loopback"
+            with self.lock:
+                self.status = "complete"
+            return result
+        except Exception as error:
+            with self.lock:
+                self.status = "error"
+                self.error = str(error) or "桌面音频识别失败。"
+            raise
+        finally:
+            if file_path:
+                file_path.unlink(missing_ok=True)
+
+    def cancel(self):
+        with self.lock:
+            if self.status not in {"starting", "recording", "stopping"}:
+                raise ValueError("当前没有可以取消的桌面录音。")
+            thread = self.thread
+            file_path = self.file_path
+        self.stop_event.set()
+        if thread:
+            thread.join(timeout=10)
+        if thread and thread.is_alive():
+            raise RuntimeError("取消桌面录音超时，请重启本地服务。")
+        if file_path:
+            file_path.unlink(missing_ok=True)
+        with self.lock:
+            self.status = "idle"
+            self.error = None
+            self.started_at = None
+            self.frames = 0
+            self.thread = None
+            self.file_path = None
+            self.output_name = None
+        return self.snapshot()
+
+
+_desktop_recorder = DesktopRecorder()
 
 
 def get_model():
@@ -432,11 +573,21 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("请求数据为空或过大。")
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
+    def require_local_client(self):
+        origin = self.headers.get("Origin", "")
+        if origin and not (
+            origin.startswith("chrome-extension://")
+            or origin.startswith("http://127.0.0.1")
+            or origin.startswith("http://localhost")
+        ):
+            raise PermissionError("桌面录音接口只允许本机扩展调用。")
+
     def do_OPTIONS(self):
         self.send_json(204, {})
 
     def do_GET(self):
-        if urlparse(self.path).path == "/api/health":
+        route = urlparse(self.path).path
+        if route == "/api/health":
             self.send_json(
                 200,
                 {
@@ -448,10 +599,45 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
             return
+        if route == "/api/desktop-recording/status":
+            try:
+                self.require_local_client()
+                self.send_json(200, _desktop_recorder.snapshot())
+            except Exception as error:
+                self.send_json(403, {"error": str(error)})
+            return
         self.send_json(404, {"error": "Not found"})
 
     def do_POST(self):
         route = urlparse(self.path).path
+        if route == "/api/desktop-recording/start":
+            try:
+                self.require_local_client()
+                payload = self.read_json()
+                self.send_json(200, _desktop_recorder.start(payload.get("title", "desktop-audio")))
+            except Exception as error:
+                print(f"Desktop recording start failed: {error}", flush=True)
+                self.send_json(500, {"error": str(error) or "桌面录音启动失败。"})
+            return
+
+        if route == "/api/desktop-recording/stop":
+            try:
+                self.require_local_client()
+                self.send_json(200, _desktop_recorder.stop_and_transcribe())
+            except Exception as error:
+                print(f"Desktop recording stop failed: {error}", flush=True)
+                self.send_json(500, {"error": str(error) or "桌面录音停止失败。"})
+            return
+
+        if route == "/api/desktop-recording/cancel":
+            try:
+                self.require_local_client()
+                self.send_json(200, _desktop_recorder.cancel())
+            except Exception as error:
+                print(f"Desktop recording cancel failed: {error}", flush=True)
+                self.send_json(500, {"error": str(error) or "取消桌面录音失败。"})
+            return
+
         if route == "/api/analyze":
             try:
                 self.send_json(200, analyze_project(self.read_json()))

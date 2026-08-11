@@ -1,2 +1,4 @@
 faster-whisper==1.2.1
 python-docx==1.2.0
+soundcard==0.4.5
+numpy==1.26.4

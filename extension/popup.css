@@ -108,6 +108,7 @@ h2 { margin: 0; font-size: 14px; }
 }
 
 .recording-panel { border-color: #d2e3fc; }
+.desktop-recording-panel { border-color: #c8e6df; }
 .transcript-panel { border-color: #d7eadc; }
 .record-hint {
   margin: 8px 0 0;

@@ -3,6 +3,11 @@ const elements = {
   ,recordHint: document.querySelector("#recordHint")
   ,recordStartBtn: document.querySelector("#recordStartBtn")
   ,recordStopBtn: document.querySelector("#recordStopBtn")
+  ,desktopRecordBadge: document.querySelector("#desktopRecordBadge")
+  ,desktopRecordHint: document.querySelector("#desktopRecordHint")
+  ,desktopRecordStartBtn: document.querySelector("#desktopRecordStartBtn")
+  ,desktopRecordStopBtn: document.querySelector("#desktopRecordStopBtn")
+  ,desktopRecordCancelBtn: document.querySelector("#desktopRecordCancelBtn")
   ,transcriptBadge: document.querySelector("#transcriptBadge")
   ,transcriptHint: document.querySelector("#transcriptHint")
   ,transcriptEmpty: document.querySelector("#transcriptEmpty")
@@ -35,6 +40,7 @@ const elements = {
 };
 
 let latestRecordingState = null;
+let latestDesktopRecordingState = null;
 let latestTranscriptState = null;
 let latestAnalysis = null;
 let lastAnalysisSignature = "";
@@ -116,6 +122,57 @@ async function refreshRecording() {
     if (response?.ok) renderRecording(response.state);
   } catch (_error) {
     renderRecording(latestRecordingState || { status: "idle" });
+  }
+}
+
+function renderDesktopRecording(state) {
+  latestDesktopRecordingState = state;
+  const active = ["starting", "recording", "stopping", "processing"].includes(state?.status);
+  elements.desktopRecordBadge.classList.toggle("active", active);
+  elements.desktopRecordStartBtn.disabled = active;
+  elements.desktopRecordStopBtn.disabled = !["starting", "recording"].includes(state?.status);
+  elements.desktopRecordCancelBtn.disabled = !["starting", "recording", "stopping"].includes(state?.status);
+  if (state?.status === "starting") {
+    elements.desktopRecordBadge.textContent = "正在启动";
+    elements.desktopRecordHint.textContent = "正在连接 Windows 默认扬声器。";
+  } else if (state?.status === "recording") {
+    elements.desktopRecordBadge.textContent = `录音中 ${formatTime(state.duration || 0)}`;
+    elements.desktopRecordHint.textContent = "正在录制系统播放声音，可以关闭插件弹窗。";
+  } else if (state?.status === "stopping" || state?.status === "processing") {
+    elements.desktopRecordBadge.textContent = "识别中";
+    elements.desktopRecordHint.textContent = "录音已停止，正在使用本地模型生成时间轴。";
+  } else if (state?.status === "error") {
+    elements.desktopRecordBadge.textContent = "录音失败";
+    elements.desktopRecordHint.textContent = state.error || "桌面音频录制失败。";
+  } else if (state?.status === "complete") {
+    elements.desktopRecordBadge.textContent = "已完成";
+    elements.desktopRecordHint.textContent = "桌面录音已完成，转写结果显示在下方。";
+  } else {
+    elements.desktopRecordBadge.textContent = "未录制";
+    elements.desktopRecordHint.textContent = "录制 Windows 正在播放的声音，适用于红果短剧 App。";
+  }
+}
+
+async function desktopRecordingCommand(type) {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type,
+      title: elements.projectTitle.value.trim() || elements.seriesTitle.value.trim() || "桌面短剧"
+    });
+    if (!response?.ok) throw new Error(response?.error || "桌面录音操作失败。");
+    renderDesktopRecording(response.state);
+    if (response.transcriptionState) renderTranscript(response.transcriptionState);
+  } catch (error) {
+    renderDesktopRecording({ status: "error", error: error.message || "桌面录音操作失败。" });
+  }
+}
+
+async function refreshDesktopRecording() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "DESKTOP_RECORDING_GET_STATE" });
+    if (response?.ok) renderDesktopRecording(response.state);
+  } catch (_error) {
+    renderDesktopRecording(latestDesktopRecordingState || { status: "idle" });
   }
 }
 
@@ -623,6 +680,9 @@ function downloadJson(filename, payload) {
 
 elements.recordStartBtn.addEventListener("click", () => recordingCommand("RECORDING_START"));
 elements.recordStopBtn.addEventListener("click", () => recordingCommand("RECORDING_STOP"));
+elements.desktopRecordStartBtn.addEventListener("click", () => desktopRecordingCommand("DESKTOP_RECORDING_START"));
+elements.desktopRecordStopBtn.addEventListener("click", () => desktopRecordingCommand("DESKTOP_RECORDING_STOP"));
+elements.desktopRecordCancelBtn.addEventListener("click", () => desktopRecordingCommand("DESKTOP_RECORDING_CANCEL"));
 elements.transcriptExportBtn.addEventListener("click", () => {
   if (!latestTranscriptState?.segments?.length) return;
   downloadJson(`transcript-${Date.now()}.json`, {
@@ -653,11 +713,13 @@ elements.projectEpisode.addEventListener("input", () => {
 });
 
 refreshRecording();
+refreshDesktopRecording();
 refreshTranscript();
 loadProjectState();
 refreshAnalysis();
 refreshProject();
 setInterval(refreshRecording, 1000);
+setInterval(refreshDesktopRecording, 1000);
 setInterval(refreshTranscript, 1000);
 setInterval(refreshAnalysis, 1000);
 setInterval(refreshProject, 2000);
