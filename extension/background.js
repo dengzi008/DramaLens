@@ -371,6 +371,27 @@ async function cancelDesktopRecording() {
   return state;
 }
 
+async function retranscribeDesktopRecording() {
+  await clearAnalysisState();
+  await writeTranscriptionState({ status: "processing", filename: null, text: "", segments: [], error: null });
+  try {
+    const response = await fetch("http://127.0.0.1:3211/api/desktop-recording/retranscribe", { method: "POST" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `桌面录音服务返回 ${response.status}`);
+    const transcriptionState = await writeTranscriptionState({
+      status: "complete",
+      filename: result.filename || "desktop-recording.wav",
+      text: result.text || "",
+      segments: result.segments || [],
+      error: null
+    });
+    return { state: await fetchDesktopRecordingState(), transcriptionState };
+  } catch (error) {
+    await writeTranscriptionState({ status: "error", error: error.message || "完整模式重新识别失败。" });
+    throw error;
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const session = await chrome.storage.session.get("recordingState");
   const local = await chrome.storage.local.get("transcriptionState");
@@ -407,6 +428,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       if (message.type === "DESKTOP_RECORDING_CANCEL") {
         sendResponse({ ok: true, state: await cancelDesktopRecording() });
+        return;
+      }
+      if (message.type === "DESKTOP_RECORDING_RETRANSCRIBE") {
+        const result = await retranscribeDesktopRecording();
+        sendResponse({ ok: true, ...result });
         return;
       }
       if (message.type === "TRANSCRIPTION_GET_STATE") {

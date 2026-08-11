@@ -8,6 +8,7 @@ const elements = {
   ,desktopRecordStartBtn: document.querySelector("#desktopRecordStartBtn")
   ,desktopRecordStopBtn: document.querySelector("#desktopRecordStopBtn")
   ,desktopRecordCancelBtn: document.querySelector("#desktopRecordCancelBtn")
+  ,desktopRetranscribeBtn: document.querySelector("#desktopRetranscribeBtn")
   ,transcriptBadge: document.querySelector("#transcriptBadge")
   ,transcriptHint: document.querySelector("#transcriptHint")
   ,transcriptEmpty: document.querySelector("#transcriptEmpty")
@@ -132,6 +133,7 @@ function renderDesktopRecording(state) {
   elements.desktopRecordStartBtn.disabled = active;
   elements.desktopRecordStopBtn.disabled = !["starting", "recording"].includes(state?.status);
   elements.desktopRecordCancelBtn.disabled = !["starting", "recording", "stopping"].includes(state?.status);
+  elements.desktopRetranscribeBtn.disabled = active || !state?.canRetranscribe;
   if (state?.status === "starting") {
     elements.desktopRecordBadge.textContent = "正在启动";
     elements.desktopRecordHint.textContent = "正在连接 Windows 默认扬声器。";
@@ -146,7 +148,7 @@ function renderDesktopRecording(state) {
     elements.desktopRecordHint.textContent = state.error || "桌面音频录制失败。";
   } else if (state?.status === "complete") {
     elements.desktopRecordBadge.textContent = "已完成";
-    elements.desktopRecordHint.textContent = "桌面录音已完成，转写结果显示在下方。";
+    elements.desktopRecordHint.textContent = "桌面录音已完成；如有漏句，可用完整模式重新识别。";
   } else {
     elements.desktopRecordBadge.textContent = "未录制";
     elements.desktopRecordHint.textContent = "录制 Windows 正在播放的声音，适用于红果短剧 App。";
@@ -683,6 +685,7 @@ elements.recordStopBtn.addEventListener("click", () => recordingCommand("RECORDI
 elements.desktopRecordStartBtn.addEventListener("click", () => desktopRecordingCommand("DESKTOP_RECORDING_START"));
 elements.desktopRecordStopBtn.addEventListener("click", () => desktopRecordingCommand("DESKTOP_RECORDING_STOP"));
 elements.desktopRecordCancelBtn.addEventListener("click", () => desktopRecordingCommand("DESKTOP_RECORDING_CANCEL"));
+elements.desktopRetranscribeBtn.addEventListener("click", () => desktopRecordingCommand("DESKTOP_RECORDING_RETRANSCRIBE"));
 elements.transcriptExportBtn.addEventListener("click", () => {
   if (!latestTranscriptState?.segments?.length) return;
   downloadJson(`transcript-${Date.now()}.json`, {

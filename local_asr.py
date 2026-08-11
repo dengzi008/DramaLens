@@ -74,6 +74,7 @@ class DesktopRecorder:
                 "startedAt": self.started_at,
                 "duration": round(duration, 1),
                 "outputName": self.output_name,
+                "canRetranscribe": bool(self.file_path and self.file_path.exists() and self.status in {"complete", "error"}),
             }
 
     def start(self, title="desktop-audio"):
@@ -83,10 +84,13 @@ class DesktopRecorder:
             safe_title = "".join("-" if char in '\\/:*?\"<>|' else char for char in str(title or "desktop-audio"))
             safe_title = " ".join(safe_title.split())[:80] or "desktop-audio"
             timestamp = time.strftime("%Y%m%d-%H%M%S")
-            temp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-            temp.close()
-            self.file_path = Path(temp.name)
             self.output_name = f"{safe_title}-{timestamp}.wav"
+            recordings_dir = PROJECT_DIR / "recordings"
+            recordings_dir.mkdir(exist_ok=True)
+            previous_path = self.file_path
+            if previous_path and previous_path.exists():
+                previous_path.unlink(missing_ok=True)
+            self.file_path = recordings_dir / self.output_name
             self.stop_event.clear()
             self.status = "starting"
             self.error = None
@@ -144,7 +148,7 @@ class DesktopRecorder:
                 raise ValueError("录音不足1秒，请播放内容后再停止。")
             self.status = "processing"
         try:
-            result = transcribe(file_path)
+            result = transcribe(file_path, vad_filter=True)
             if not result["segments"]:
                 raise ValueError("没有识别到有效语音，请确认红果 App 正在播放且系统音量正常。")
             result["filename"] = output_name
@@ -157,9 +161,31 @@ class DesktopRecorder:
                 self.status = "error"
                 self.error = str(error) or "桌面音频识别失败。"
             raise
-        finally:
-            if file_path:
-                file_path.unlink(missing_ok=True)
+
+    def retranscribe(self):
+        with self.lock:
+            if self.status in {"starting", "recording", "stopping", "processing"}:
+                raise ValueError("当前任务尚未结束，请稍后再重新识别。")
+            file_path = self.file_path
+            output_name = self.output_name
+            if not file_path or not file_path.exists():
+                raise ValueError("最近一次桌面录音未保留，请重新录制一遍。")
+            self.status = "processing"
+            self.error = None
+        try:
+            result = transcribe(file_path, vad_filter=False)
+            if not result["segments"]:
+                raise ValueError("完整模式仍未识别到有效语音，请检查系统音量。")
+            result["filename"] = output_name
+            result["source"] = "desktop-loopback-full"
+            with self.lock:
+                self.status = "complete"
+            return result
+        except Exception as error:
+            with self.lock:
+                self.status = "error"
+                self.error = str(error) or "完整模式重新识别失败。"
+            raise
 
     def cancel(self):
         with self.lock:
@@ -208,14 +234,14 @@ def get_model():
     return _model
 
 
-def transcribe(audio_path):
+def transcribe(audio_path, vad_filter=True):
     model = get_model()
     segment_stream, info = model.transcribe(
         str(audio_path),
         language="zh",
         beam_size=5,
-        vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 400},
+        vad_filter=vad_filter,
+        vad_parameters={"min_silence_duration_ms": 250} if vad_filter else None,
         condition_on_previous_text=True,
     )
 
@@ -636,6 +662,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as error:
                 print(f"Desktop recording cancel failed: {error}", flush=True)
                 self.send_json(500, {"error": str(error) or "取消桌面录音失败。"})
+            return
+
+        if route == "/api/desktop-recording/retranscribe":
+            try:
+                self.require_local_client()
+                self.send_json(200, _desktop_recorder.retranscribe())
+            except Exception as error:
+                print(f"Desktop retranscription failed: {error}", flush=True)
+                self.send_json(500, {"error": str(error) or "完整模式重新识别失败。"})
             return
 
         if route == "/api/analyze":

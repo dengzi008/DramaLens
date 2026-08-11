@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "短剧字幕探针",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "录制浏览器标签页或 Windows 桌面应用音频，并通过本地服务生成带时间码的语音转写。",
   "permissions": ["activeTab", "storage", "tabCapture", "offscreen", "downloads"],
   "host_permissions": ["http://127.0.0.1:3211/*"],

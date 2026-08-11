@@ -1,6 +1,7 @@
 .env
 .venv/
 models/
+recordings/
 __pycache__/
 python-*-amd64.exe
 *.webm
