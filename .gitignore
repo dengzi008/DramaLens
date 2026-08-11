@@ -1,0 +1,23 @@
+.env
+.venv/
+models/
+__pycache__/
+python-*-amd64.exe
+*.webm
+node_modules/
+*.docx
+*.pdf
+.DS_Store
+Thumbs.db
+
+# Local marketing assets and early prototype files are not part of the release.
+marketing/
+/background.js
+/content.js
+/manifest.json
+/offscreen.html
+/offscreen.js
+/popup.css
+/popup.html
+/popup.js
+/server.mjs

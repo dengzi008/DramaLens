@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "短剧字幕探针",
+  "version": "0.7.2",
+  "description": "捕获当前红果标签页音频，并通过本地服务生成带时间码的语音转写。",
+  "permissions": ["activeTab", "storage", "tabCapture", "offscreen", "downloads"],
+  "host_permissions": ["http://127.0.0.1:3211/*"],
+  "action": {
+    "default_title": "短剧字幕探针",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
