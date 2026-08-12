@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DramaLens 短剧创作助手",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "连续采集浏览器或 Windows 桌面音频，生成带时间码的转写、AI 校对和短剧创作拆解。",
   "permissions": ["activeTab", "storage", "tabCapture", "offscreen", "downloads"],
   "host_permissions": ["http://127.0.0.1:3211/*"],

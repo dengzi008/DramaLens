@@ -686,6 +686,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as error:
                 self.send_json(500, {"error": str(error) or "结束连续采集失败。"})
             return
+        if route == "/api/batch/cancel":
+            try:
+                self.require_local_client()
+                self.send_json(200, _batch_manager.cancel())
+            except Exception as error:
+                self.send_json(500, {"error": str(error) or "取消任务失败。"})
+            return
+        if route == "/api/batch/delete":
+            try:
+                self.require_local_client()
+                self.send_json(200, _batch_manager.delete())
+            except Exception as error:
+                self.send_json(500, {"error": str(error) or "删除任务失败。"})
+            return
         if route == "/api/batch/retry":
             try:
                 self.require_local_client()

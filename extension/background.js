@@ -489,6 +489,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: true, state: await batchRequest("/api/batch/finish", "POST") });
         return;
       }
+      if (message.type === "BATCH_CANCEL") {
+        sendResponse({ ok: true, state: await batchRequest("/api/batch/cancel", "POST") });
+        return;
+      }
+      if (message.type === "BATCH_DELETE") {
+        sendResponse({ ok: true, state: await batchRequest("/api/batch/delete", "POST") });
+        return;
+      }
       if (message.type === "BATCH_RETRY") {
         sendResponse({ ok: true, state: await batchRequest("/api/batch/retry", "POST", { episode: message.episode }) });
         return;

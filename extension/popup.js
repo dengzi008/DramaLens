@@ -9,6 +9,8 @@ const elements = {
   ,batchNextBtn: document.querySelector("#batchNextBtn")
   ,batchFinishBtn: document.querySelector("#batchFinishBtn")
   ,batchControllerBtn: document.querySelector("#batchControllerBtn")
+  ,batchCancelBtn: document.querySelector("#batchCancelBtn")
+  ,batchDeleteBtn: document.querySelector("#batchDeleteBtn")
   ,batchAiBtn: document.querySelector("#batchAiBtn")
   ,batchImportBtn: document.querySelector("#batchImportBtn")
   ,batchEpisodeList: document.querySelector("#batchEpisodeList")
@@ -83,6 +85,7 @@ const batchStatusText = {
   "ai-processing": "AI处理中",
   complete: "AI完成",
   "ai-error": "AI失败"
+  ,canceled: "已取消"
 };
 
 function renderBatch(state) {
@@ -99,6 +102,8 @@ function renderBatch(state) {
   elements.batchStartBtn.disabled = busy;
   elements.batchNextBtn.disabled = !recording || atLastEpisode;
   elements.batchFinishBtn.disabled = !recording;
+  elements.batchCancelBtn.disabled = !state?.sessionId || ["idle", "canceled"].includes(state?.status);
+  elements.batchDeleteBtn.disabled = !state?.sessionId;
   elements.batchAiBtn.disabled = state?.aiStatus === "processing" || !episodes.some(item => ["transcribed", "ai-error"].includes(item.status));
   elements.batchImportBtn.disabled = busy || state?.aiStatus === "processing" || !episodes.some(item => item.segmentCount);
   elements.batchAiBtn.textContent = state?.aiStatus === "processing" ? "AI处理中…" : aiCompleted === episodes.length && episodes.length ? "AI处理已完成" : "AI校对并生成报告";
@@ -131,6 +136,9 @@ function renderBatch(state) {
   } else if (state?.status === "interrupted" || state?.status === "error") {
     elements.batchBadge.textContent = "任务异常";
     elements.batchHint.textContent = state.error || "请检查失败集并重试。";
+  } else if (state?.status === "canceled" || state?.status === "canceling") {
+    elements.batchBadge.textContent = state.status === "canceling" ? "正在取消" : "任务已取消";
+    elements.batchHint.textContent = "本次任务已停止；可删除记录，或直接开始新的采集任务。";
   } else {
     elements.batchBadge.textContent = "未启动";
   }
@@ -152,6 +160,8 @@ function renderBatch(state) {
 
 async function batchCommand(type, extra = {}) {
   try {
+    if (type === "BATCH_CANCEL" && !confirm("确定取消本次任务吗？等待识别和AI结果将被丢弃，已保存到项目报告的内容不受影响。")) return;
+    if (type === "BATCH_DELETE" && !confirm("确定删除本次任务吗？本批采集状态、识别结果和本地音频将被清除，已保存到项目报告的内容不受影响。")) return;
     if (type === "BATCH_IMPORT_PROJECT" && elements.batchImportBtn.textContent === "查看项目与导出") {
       elements.projectPanel.scrollIntoView({ behavior: "smooth", block: "start" });
       elements.projectHint.textContent = "项目已保存，可生成整体分析或导出报告。";
@@ -826,6 +836,8 @@ elements.batchStartBtn.addEventListener("click", () => batchCommand("BATCH_START
 elements.batchNextBtn.addEventListener("click", () => batchCommand("BATCH_NEXT"));
 elements.batchFinishBtn.addEventListener("click", () => batchCommand("BATCH_FINISH"));
 elements.batchControllerBtn.addEventListener("click", () => batchCommand("BATCH_CONTROLLER_OPEN"));
+elements.batchCancelBtn.addEventListener("click", () => batchCommand("BATCH_CANCEL"));
+elements.batchDeleteBtn.addEventListener("click", () => batchCommand("BATCH_DELETE"));
 elements.batchAiBtn.addEventListener("click", () => batchCommand("BATCH_AI_START"));
 elements.batchImportBtn.addEventListener("click", () => batchCommand("BATCH_IMPORT_PROJECT"));
 elements.recordStopBtn.addEventListener("click", () => recordingCommand("RECORDING_STOP"));

@@ -1,6 +1,7 @@
 import json
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -65,6 +66,7 @@ class BatchManager:
         self.capture_stop = Event()
         self.capture_path = None
         self.capture_frames = 0
+        self.deleted_sessions = set()
         self.sample_rate = 48000
         self.channels = 2
         self.state = self._default_state()
@@ -96,7 +98,7 @@ class BatchManager:
             for episode in self.state["episodes"]:
                 if episode.get("status") in {"queued", "transcribing"} and Path(episode.get("audioPath", "")).exists():
                     episode["status"] = "queued"
-                    self.jobs.put(episode["episode"])
+                    self.jobs.put((self.state.get("sessionId"), episode["episode"]))
             self._save()
         except Exception:
             self.state = self._default_state()
@@ -248,7 +250,7 @@ class BatchManager:
             else:
                 self._start_capture(next_number)
             self._save()
-        self.jobs.put(current)
+        self.jobs.put((self.state.get("sessionId"), current))
         return self.status()
 
     def finish(self):
@@ -278,7 +280,7 @@ class BatchManager:
             self.state["currentEpisode"] = None
             self.state["currentStartedAt"] = None
             self._save()
-        self.jobs.put(current)
+        self.jobs.put((self.state.get("sessionId"), current))
         return self.status()
 
     def _find_episode(self, number):
@@ -286,9 +288,11 @@ class BatchManager:
 
     def _worker_loop(self):
         while True:
-            number = self.jobs.get()
+            session_id, number = self.jobs.get()
             try:
                 with self.lock:
+                    if session_id != self.state.get("sessionId"):
+                        continue
                     episode = self._find_episode(number)
                     if not episode:
                         continue
@@ -301,6 +305,8 @@ class BatchManager:
                 if not cleaned:
                     raise ValueError("没有识别到有效语音，请确认本集有声音后重试。")
                 with self.lock:
+                    if session_id != self.state.get("sessionId"):
+                        continue
                     episode = self._find_episode(number)
                     episode["segments"] = cleaned
                     episode["text"] = "".join(item.get("text", "") for item in cleaned)
@@ -311,6 +317,8 @@ class BatchManager:
                     self._save()
             except Exception as error:
                 with self.lock:
+                    if session_id != self.state.get("sessionId"):
+                        continue
                     episode = self._find_episode(number)
                     if episode:
                         episode["status"] = "error"
@@ -318,6 +326,9 @@ class BatchManager:
                     self._update_overall_status()
                     self._save()
             finally:
+                if session_id in self.deleted_sessions:
+                    shutil.rmtree(self.root / str(session_id), ignore_errors=True)
+                    self.deleted_sessions.discard(session_id)
                 self.jobs.task_done()
 
     def _update_overall_status(self):
@@ -338,7 +349,67 @@ class BatchManager:
             episode["status"] = "queued"
             episode["error"] = None
             self._save()
-        self.jobs.put(number)
+        self.jobs.put((self.state.get("sessionId"), number))
+        return self.status()
+
+    def _abort_capture(self):
+        thread = self.capture_thread
+        path = self.capture_path
+        self.capture_stop.set()
+        if thread:
+            thread.join(timeout=10)
+        self.capture_thread = None
+        self.capture_path = None
+        self.capture_frames = 0
+        if path:
+            path.unlink(missing_ok=True)
+
+    def cancel(self):
+        no_task = False
+        with self.lock:
+            session_id = self.state.get("sessionId")
+            if not session_id or self.state.get("status") in {"idle", "canceled"}:
+                no_task = True
+                was_recording = False
+            else:
+                was_recording = self.capture_thread is not None
+                self.state["status"] = "canceling"
+                self.state["error"] = None
+                self._save()
+        if no_task:
+            return self.status()
+        if was_recording:
+            self._abort_capture()
+        stale_session = False
+        with self.lock:
+            if session_id != self.state.get("sessionId"):
+                stale_session = True
+            else:
+                for episode in self.state["episodes"]:
+                    if episode.get("status") in {"queued", "transcribing", "ai-processing"}:
+                        episode["status"] = "canceled"
+                        episode["error"] = None
+                self.state["status"] = "canceled"
+                self.state["aiStatus"] = "canceled" if self.state.get("aiStatus") == "processing" else self.state.get("aiStatus", "idle")
+                self.state["currentEpisode"] = None
+                self.state["currentStartedAt"] = None
+                self._save()
+        if stale_session:
+            return self.status()
+        return self.status()
+
+    def delete(self):
+        self.cancel()
+        with self.lock:
+            session_id = self.state.get("sessionId")
+            if session_id:
+                self.deleted_sessions.add(session_id)
+            self.state = self._default_state()
+            self._save()
+        if session_id:
+            shutil.rmtree(self.root / str(session_id), ignore_errors=True)
+            if not (self.root / str(session_id)).exists():
+                self.deleted_sessions.discard(session_id)
         return self.status()
 
     def start_ai(self):
@@ -350,20 +421,25 @@ class BatchManager:
                 raise ValueError("没有等待AI处理的已识别集数。")
             self.state["aiStatus"] = "processing"
             self._save()
-            self.ai_thread = Thread(target=self._ai_loop, args=(candidates,), daemon=True)
+            session_id = self.state.get("sessionId")
+            self.ai_thread = Thread(target=self._ai_loop, args=(session_id, candidates), daemon=True)
             self.ai_thread.start()
         return self.status()
 
-    def _ai_loop(self, numbers):
+    def _ai_loop(self, session_id, numbers):
         for number in numbers:
             try:
                 with self.lock:
+                    if session_id != self.state.get("sessionId"):
+                        return
                     episode = self._find_episode(number)
                     episode["status"] = "ai-processing"
                     self._save()
                     payload = {"title": self.state["title"], "episode": episode["label"], "segments": episode["segments"]}
                 report = self.analyze_fn(payload)
                 with self.lock:
+                    if session_id != self.state.get("sessionId"):
+                        return
                     episode = self._find_episode(number)
                     corrected = {str(item.get("id")): item for item in report.get("corrected_segments", [])}
                     for segment in episode["segments"]:
@@ -377,12 +453,16 @@ class BatchManager:
                     self._save()
             except Exception as error:
                 with self.lock:
+                    if session_id != self.state.get("sessionId"):
+                        return
                     episode = self._find_episode(number)
                     if episode:
                         episode["status"] = "ai-error"
                         episode["error"] = str(error) or "AI处理失败。"
                     self._save()
         with self.lock:
+            if session_id != self.state.get("sessionId"):
+                return
             self.state["aiStatus"] = "complete"
             self._save()
 

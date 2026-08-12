@@ -191,6 +191,7 @@ h2 { margin: 0; font-size: 14px; }
 }
 .advanced-tools > summary { cursor: pointer; color: #3c4043; font-size: 13px; font-weight: 600; }
 .advanced-tools > .panel { margin-top: 10px; }
+.danger-button { color: #b3261e; border-color: #f2b8b5; background: #fff8f7; }
 .full-field,
 .project-save-row label { color: #5f6368; font-size: 11px; }
 .full-field { display: block; margin-top: 10px; }
