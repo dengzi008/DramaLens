@@ -3,51 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>短剧字幕探针</title>
+    <title>DramaLens</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <main>
       <header>
-        <h1>短剧字幕探针</h1>
+        <h1>DramaLens</h1>
         <span class="badge running">本地处理</span>
       </header>
 
       <section class="panel batch-panel">
         <div class="section-title">
-          <h2>连续多集采集</h2>
+          <h2>项目采集</h2>
           <span id="batchBadge">未启动</span>
         </div>
         <div class="batch-fields">
-          <label>剧名<input id="batchTitle" type="text" placeholder="例如：命中注定缘归来" /></label>
+          <label>项目/剧名<input id="batchTitle" type="text" placeholder="例如：命中注定缘归来" /></label>
           <label>起始集<input id="batchStartEpisode" type="number" min="1" value="1" /></label>
           <label>结束集<input id="batchEndEpisode" type="number" min="1" placeholder="可选" /></label>
         </div>
-        <p id="batchHint" class="record-hint">每集结束只需按一次F8；上一集在后台完整识别，下一集立即开始录音。</p>
+        <p id="batchHint" class="record-hint">单集可将起止集数填写相同；多集每集结束按F8，最后一集按F10。</p>
+        <div id="batchProgress" class="batch-progress" aria-live="polite"></div>
         <div class="inline-actions">
-          <button id="batchStartBtn" class="primary">开始连续采集</button>
-          <button id="batchNextBtn">本集结束→下一集</button>
-          <button id="batchFinishBtn">结束全部</button>
+          <button id="batchStartBtn" class="primary">开始采集</button>
+          <button id="batchNextBtn">本集完成，下一集</button>
+          <button id="batchFinishBtn">完成全部采集</button>
           <button id="batchControllerBtn">打开置顶控制器</button>
         </div>
         <div class="inline-actions">
-          <button id="batchAiBtn">批量AI校对并拆解</button>
-          <button id="batchImportBtn">导入多集项目</button>
+          <button id="batchAiBtn">AI校对并生成报告</button>
+          <button id="batchImportBtn">保存到项目</button>
         </div>
         <ol id="batchEpisodeList" class="batch-episode-list"></ol>
       </section>
 
       <section class="panel project-panel">
         <div class="section-title">
-          <h2>多集项目</h2>
+          <h2>项目报告</h2>
           <span id="projectCount">0 集</span>
         </div>
-        <label class="full-field">项目剧名<input id="seriesTitle" type="text" placeholder="例如：苦尽甘来那一天" /></label>
-        <div class="project-save-row">
-          <label>当前集数<input id="seriesEpisode" type="text" value="第1集" /></label>
-          <button id="projectSaveBtn" class="primary">保存当前集</button>
-        </div>
-        <p id="projectHint" class="record-hint">完成当前集校对与拆解后，保存到项目，下一集不会覆盖。</p>
+        <label class="full-field">项目名称<input id="seriesTitle" type="text" placeholder="例如：苦尽甘来那一天" /></label>
+        <p id="projectHint" class="record-hint">采集结果保存到项目后，可查看单集、生成整体分析并导出报告。</p>
         <div id="projectEmpty" class="empty compact">项目中还没有集数。</div>
         <ol id="projectEpisodeList" class="project-episode-list"></ol>
         <div class="series-actions">
@@ -62,7 +59,14 @@
         <div id="seriesReport" class="analysis-result"></div>
       </section>
 
-      <section class="panel recording-panel">
+      <details class="advanced-tools">
+        <summary>单集复核与高级工具</summary>
+        <div class="project-save-row">
+          <label>当前集数<input id="seriesEpisode" type="text" value="第1集" /></label>
+          <button id="projectSaveBtn" class="primary">保存当前修改</button>
+        </div>
+
+      <section class="panel recording-panel legacy-capture" hidden>
         <div class="section-title">
           <h2>标签页音频采集</h2>
           <span id="recordBadge" class="record-badge">未录制</span>
@@ -74,7 +78,7 @@
         </div>
       </section>
 
-      <section class="panel desktop-recording-panel">
+      <section class="panel desktop-recording-panel legacy-capture" hidden>
         <div class="section-title">
           <h2>桌面应用音频采集</h2>
           <span id="desktopRecordBadge" class="record-badge">未录制</span>
@@ -123,6 +127,7 @@
         <div id="analysisEmpty" class="empty compact">暂无拆解报告。</div>
         <div id="analysisResult" class="analysis-result"></div>
       </section>
+      </details>
 
       <p class="privacy">音频在本机识别；仅在点击AI拆解时发送时间轴文本。</p>
     </main>

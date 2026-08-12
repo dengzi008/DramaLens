@@ -168,6 +168,29 @@ h2 { margin: 0; font-size: 14px; }
 .batch-fields input { width: 100%; margin-top: 4px; padding: 7px 8px; border: 1px solid #dadce0; border-radius: 6px; }
 .batch-episode-list { max-height: 180px; margin: 10px 0 0; padding: 0; overflow: auto; list-style: none; }
 .batch-episode-list li { display: grid; grid-template-columns: 62px 1fr auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid #eef2f7; font-size: 12px; }
+.batch-progress {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+.batch-progress span {
+  padding: 7px 6px;
+  border-radius: 7px;
+  color: #3c4043;
+  background: #f3f7fd;
+  text-align: center;
+  font-size: 11px;
+}
+.advanced-tools {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e0e3e7;
+  border-radius: 10px;
+  background: #fff;
+}
+.advanced-tools > summary { cursor: pointer; color: #3c4043; font-size: 13px; font-weight: 600; }
+.advanced-tools > .panel { margin-top: 10px; }
 .full-field,
 .project-save-row label { color: #5f6368; font-size: 11px; }
 .full-field { display: block; margin-top: 10px; }

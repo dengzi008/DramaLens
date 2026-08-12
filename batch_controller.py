@@ -15,7 +15,7 @@ class Controller:
     def __init__(self, port):
         self.base = f"http://127.0.0.1:{port}"
         self.root = tk.Tk()
-        self.root.title("DramaLens 连续采集")
+        self.root.title("DramaLens 项目采集")
         self.root.attributes("-topmost", True)
         self.root.geometry("390x250+40+80")
         self.root.resizable(False, False)
@@ -24,6 +24,7 @@ class Controller:
         self.duration_var = tk.StringVar(value="录制：00:00")
         self.queue_var = tk.StringVar(value="已完成：0　等待识别：0")
         self.hint_var = tk.StringVar(value="F8：本集结束并开始下一集　F10：结束全部")
+        self.at_last_episode = False
         self._build()
         self._install_hotkeys()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
@@ -72,6 +73,9 @@ class Controller:
                 raise RuntimeError(str(error))
 
     def next_episode(self):
+        if self.at_last_episode:
+            messagebox.showinfo("最后一集", "当前是最后一集，请按 F10 或点击“完成全部采集”。", parent=self.root)
+            return
         try:
             self.next_btn.config(state="disabled")
             self.request("/api/batch/next", method="POST")
@@ -96,7 +100,7 @@ class Controller:
     def poll(self, immediate=False):
         try:
             state = self.request("/api/batch/status")
-            self.title_var.set(state.get("title") or "DramaLens 连续采集")
+            self.title_var.set(state.get("title") or "DramaLens 项目采集")
             current = state.get("currentEpisode")
             self.episode_var.set(f"当前：第{current}集" if current else f"状态：{state.get('status', 'idle')}")
             seconds = int(state.get("currentDuration") or 0)
@@ -107,8 +111,11 @@ class Controller:
             errors = sum(counts.get(key, 0) for key in ("error", "ai-error"))
             self.queue_var.set(f"已完成：{done}　等待识别：{waiting}　失败：{errors}")
             recording = state.get("status") == "recording"
-            self.next_btn.config(state="normal" if recording else "disabled")
+            end_episode = state.get("endEpisode")
+            self.at_last_episode = recording and end_episode is not None and int(current) >= int(end_episode)
+            self.next_btn.config(state="normal" if recording and not self.at_last_episode else "disabled")
             self.finish_btn.config(state="normal" if recording else "disabled")
+            self.hint_var.set("当前是最后一集：请按F10完成全部采集" if self.at_last_episode else "F8：本集结束并开始下一集　F10：结束全部")
         except Exception as error:
             self.title_var.set("无法连接 DramaLens 本地服务")
             self.queue_var.set(str(error))

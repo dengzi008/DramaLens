@@ -4,6 +4,7 @@ const elements = {
   ,batchStartEpisode: document.querySelector("#batchStartEpisode")
   ,batchEndEpisode: document.querySelector("#batchEndEpisode")
   ,batchHint: document.querySelector("#batchHint")
+  ,batchProgress: document.querySelector("#batchProgress")
   ,batchStartBtn: document.querySelector("#batchStartBtn")
   ,batchNextBtn: document.querySelector("#batchNextBtn")
   ,batchFinishBtn: document.querySelector("#batchFinishBtn")
@@ -50,6 +51,8 @@ const elements = {
   ,seriesAnalysisBtn: document.querySelector("#seriesAnalysisBtn")
   ,seriesExportBtn: document.querySelector("#seriesExportBtn")
   ,seriesReport: document.querySelector("#seriesReport")
+  ,advancedTools: document.querySelector(".advanced-tools")
+  ,projectPanel: document.querySelector(".project-panel")
 };
 
 let latestRecordingState = null;
@@ -84,22 +87,47 @@ const batchStatusText = {
 
 function renderBatch(state) {
   latestBatchState = state;
+  const episodes = state?.episodes || [];
   const recording = state?.status === "recording";
   const busy = ["recording", "pausing", "stopping", "processing"].includes(state?.status);
+  const atLastEpisode = recording && state?.endEpisode != null && Number(state.currentEpisode) >= Number(state.endEpisode);
+  const expected = state?.endEpisode
+    ? Math.max(1, Number(state.endEpisode) - Number(state.startEpisode) + 1)
+    : null;
+  const recognized = episodes.filter(item => ["transcribed", "ai-processing", "complete", "ai-error"].includes(item.status)).length;
+  const aiCompleted = episodes.filter(item => item.status === "complete").length;
   elements.batchStartBtn.disabled = busy;
-  elements.batchNextBtn.disabled = !recording;
+  elements.batchNextBtn.disabled = !recording || atLastEpisode;
   elements.batchFinishBtn.disabled = !recording;
-  elements.batchAiBtn.disabled = state?.aiStatus === "processing" || !(state?.episodes || []).some(item => ["transcribed", "ai-error"].includes(item.status));
-  elements.batchImportBtn.disabled = !(state?.episodes || []).some(item => item.segmentCount);
+  elements.batchAiBtn.disabled = state?.aiStatus === "processing" || !episodes.some(item => ["transcribed", "ai-error"].includes(item.status));
+  elements.batchImportBtn.disabled = busy || state?.aiStatus === "processing" || !episodes.some(item => item.segmentCount);
+  elements.batchAiBtn.textContent = state?.aiStatus === "processing" ? "AI处理中…" : aiCompleted === episodes.length && episodes.length ? "AI处理已完成" : "AI校对并生成报告";
+  const projectEpisodeNumbers = new Set((latestProjectState?.episodes || []).map(item => episodeNumber(item.episode)));
+  const importableEpisodeNumbers = episodes.filter(item => item.segmentCount).map(item => Number(item.episode));
+  const allImported = importableEpisodeNumbers.length > 0 && importableEpisodeNumbers.every(number => projectEpisodeNumbers.has(number));
+  elements.batchImportBtn.textContent = allImported ? "查看项目与导出" : "保存到项目";
+  elements.batchProgress.replaceChildren(...[
+    `已采集 ${episodes.length}${expected ? `/${expected}` : ""}集`,
+    `识别完成 ${recognized}集`,
+    `AI完成 ${aiCompleted}集`
+  ].map(text => {
+    const item = document.createElement("span");
+    item.textContent = text;
+    return item;
+  }));
   if (recording) {
     elements.batchBadge.textContent = `第${state.currentEpisode}集录制中`;
-    elements.batchHint.textContent = `当前 ${formatTime(state.currentDuration || 0)}；按F8结束本集并立即开始第${Number(state.currentEpisode) + 1}集。`;
+    elements.batchHint.textContent = atLastEpisode
+      ? `当前 ${formatTime(state.currentDuration || 0)}；这是最后一集，完成后点击“完成全部采集”或按F10。`
+      : `当前 ${formatTime(state.currentDuration || 0)}；按F8完成本集并立即开始第${Number(state.currentEpisode) + 1}集。`;
   } else if (state?.status === "processing") {
     elements.batchBadge.textContent = "后台识别中";
     elements.batchHint.textContent = "采集已结束，正在按顺序完整识别各集，可以关闭插件。";
   } else if (state?.status === "ready") {
-    elements.batchBadge.textContent = "识别完成";
-    elements.batchHint.textContent = "可以批量AI校对并拆解，或先导入多集项目人工检查。";
+    elements.batchBadge.textContent = aiCompleted && aiCompleted === episodes.length ? "AI处理完成" : "识别完成";
+    elements.batchHint.textContent = aiCompleted && aiCompleted === episodes.length
+      ? "AI报告已生成，下一步保存到项目。"
+      : "下一步可以AI校对并生成报告，也可以跳过AI直接保存到项目。";
   } else if (state?.status === "interrupted" || state?.status === "error") {
     elements.batchBadge.textContent = "任务异常";
     elements.batchHint.textContent = state.error || "请检查失败集并重试。";
@@ -124,6 +152,11 @@ function renderBatch(state) {
 
 async function batchCommand(type, extra = {}) {
   try {
+    if (type === "BATCH_IMPORT_PROJECT" && elements.batchImportBtn.textContent === "查看项目与导出") {
+      elements.projectPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      elements.projectHint.textContent = "项目已保存，可生成整体分析或导出报告。";
+      return;
+    }
     let message = { type, ...extra };
     if (type === "BATCH_START") {
       const startEpisode = Number(elements.batchStartEpisode.value || 1);
@@ -136,7 +169,8 @@ async function batchCommand(type, extra = {}) {
     if (type === "BATCH_IMPORT_PROJECT") {
       latestProjectState = response.state;
       renderProject(response.state);
-      elements.batchHint.textContent = `已导入${response.state.episodes?.length || 0}集到多集项目。`;
+      elements.batchImportBtn.textContent = "查看项目与导出";
+      elements.batchHint.textContent = `已保存${response.state.episodes?.length || 0}集到项目，可在下方生成整体分析或导出。`;
       return;
     }
     if (response.state?.episodes) renderBatch(response.state);
@@ -617,6 +651,7 @@ async function loadEpisodeFromProject(episode) {
   elements.seriesEpisode.value = episode.episode || "第1集";
   renderTranscript(latestTranscriptState);
   renderAnalysis(latestAnalysis);
+  elements.advancedTools.open = true;
   elements.projectHint.textContent = `已载入${episode.episode}，可继续修改或重新分析。`;
 }
 
@@ -645,6 +680,11 @@ function renderProject(project, seriesJob) {
   latestProjectState = project;
   const episodes = project.episodes || [];
   elements.projectCount.textContent = `${episodes.length} 集`;
+  const batchEpisodeNumbers = new Set((latestBatchState?.episodes || []).filter(item => item.segmentCount).map(item => Number(item.episode)));
+  const projectEpisodeNumbers = new Set(episodes.map(item => episodeNumber(item.episode)));
+  if (batchEpisodeNumbers.size && [...batchEpisodeNumbers].every(number => projectEpisodeNumbers.has(number))) {
+    elements.batchImportBtn.textContent = "查看项目与导出";
+  }
   elements.projectEmpty.hidden = episodes.length > 0;
   if (!elements.seriesTitle.matches(":focus")) elements.seriesTitle.value = project.title || elements.seriesTitle.value;
   elements.projectEpisodeList.replaceChildren(...episodes.map(episode => {
