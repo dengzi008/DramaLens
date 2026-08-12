@@ -78,6 +78,11 @@ function transcriptSignature(state) {
   });
 }
 
+function episodeNumber(value) {
+  const match = String(value || "").match(/\d+/);
+  return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
+}
+
 const batchStatusText = {
   queued: "等待识别",
   transcribing: "识别中",
