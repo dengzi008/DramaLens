@@ -59,6 +59,7 @@ const elements = {
 
 let latestRecordingState = null;
 let latestBatchState = null;
+let batchConnectionFailures = 0;
 let latestDesktopRecordingState = null;
 let latestTranscriptState = null;
 let latestAnalysis = null;
@@ -179,8 +180,11 @@ async function batchCommand(type, extra = {}) {
     if (type === "BATCH_IMPORT_PROJECT") {
       latestProjectState = response.state;
       renderProject(response.state);
+      elements.seriesTitle.value = response.state.title || elements.batchTitle.value.trim();
       elements.batchImportBtn.textContent = "查看项目与导出";
       elements.batchHint.textContent = `已保存${response.state.episodes?.length || 0}集到项目，可在下方生成整体分析或导出。`;
+      elements.projectHint.textContent = `保存成功：${response.state.title || "当前项目"}，共${response.state.episodes?.length || 0}集。`;
+      elements.projectPanel.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
     if (response.state?.episodes) renderBatch(response.state);
@@ -192,9 +196,15 @@ async function batchCommand(type, extra = {}) {
 async function refreshBatch() {
   try {
     const response = await chrome.runtime.sendMessage({ type: "BATCH_GET_STATE" });
-    if (response?.ok) renderBatch(response.state);
+    if (response?.ok) {
+      batchConnectionFailures = 0;
+      renderBatch(response.state);
+    }
   } catch (error) {
-    elements.batchHint.textContent = "无法连接批量服务，请确认本地服务正在运行。";
+    batchConnectionFailures += 1;
+    if (!latestBatchState || batchConnectionFailures >= 5) {
+      elements.batchHint.textContent = "本地服务连续连接失败，请确认 start-asr.cmd 窗口仍在运行。";
+    }
   }
 }
 
