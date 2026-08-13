@@ -16,8 +16,8 @@ from faster_whisper import WhisperModel
 from docx import Document
 from docx.shared import Pt
 import numpy as np
-import soundcard as sc
 
+from audio_capture import capture_backend, capture_capabilities, get_desktop_capture_microphone
 from batch_capture import BatchManager
 
 
@@ -104,12 +104,7 @@ class DesktopRecorder:
 
     def _record_loop(self):
         try:
-            speaker = sc.default_speaker()
-            if speaker is None:
-                raise RuntimeError("没有找到默认扬声器，请先确认 Windows 声音输出设备可用。")
-            microphone = sc.get_microphone(id=str(speaker.name), include_loopback=True)
-            if microphone is None:
-                raise RuntimeError("无法创建 Windows WASAPI 回环录音设备。")
+            microphone = get_desktop_capture_microphone()
             with wave.open(str(self.file_path), "wb") as wav_file:
                 wav_file.setnchannels(self.channels)
                 wav_file.setsampwidth(2)
@@ -154,7 +149,7 @@ class DesktopRecorder:
             if not result["segments"]:
                 raise ValueError("没有识别到有效语音，请确认红果 App 正在播放且系统音量正常。")
             result["filename"] = output_name
-            result["source"] = "desktop-loopback"
+            result["source"] = capture_backend()
             with self.lock:
                 self.status = "complete"
             return result
@@ -634,6 +629,7 @@ class Handler(BaseHTTPRequestHandler):
                     "engine": "faster-whisper",
                     "model": MODEL_NAME,
                     "loaded": _model is not None,
+                    **capture_capabilities(),
                 },
             )
             return

@@ -296,7 +296,7 @@ function renderDesktopRecording(state) {
   elements.desktopRetranscribeBtn.disabled = active || !state?.canRetranscribe;
   if (state?.status === "starting") {
     elements.desktopRecordBadge.textContent = "正在启动";
-    elements.desktopRecordHint.textContent = "正在连接 Windows 默认扬声器。";
+    elements.desktopRecordHint.textContent = "正在连接系统桌面音频设备。";
   } else if (state?.status === "recording") {
     elements.desktopRecordBadge.textContent = `录音中 ${formatTime(state.duration || 0)}`;
     elements.desktopRecordHint.textContent = "正在录制系统播放声音，可以关闭插件弹窗。";
@@ -311,7 +311,7 @@ function renderDesktopRecording(state) {
     elements.desktopRecordHint.textContent = "桌面录音已完成；默认使用完整识别，如有漏句可重新完整识别。";
   } else {
     elements.desktopRecordBadge.textContent = "未录制";
-    elements.desktopRecordHint.textContent = "录制 Windows 正在播放的声音，适用于红果短剧 App。";
+    elements.desktopRecordHint.textContent = "录制电脑正在播放的声音；macOS 桌面 App 需配置 BlackHole。";
   }
 }
 
