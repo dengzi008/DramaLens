@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0 - 2026-08-13
+
+- 新增 macOS 本地服务安装与启动脚本
+- 新增 CoreAudio 桌面音频采集支持，可自动选择 BlackHole 或自定义虚拟音频设备
+- 健康检查接口新增平台、录音后端和设备提示信息
+- 扩展界面与文档补充 Windows/macOS 双平台说明
+
 ## 0.9.4 - 2026-08-12
 
 - 修复保存到项目后弹窗提示 `episodeNumber is not defined` 的前端错误

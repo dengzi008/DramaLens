@@ -11,7 +11,7 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 
 import numpy as np
-import soundcard as sc
+from audio_capture import get_desktop_capture_microphone
 
 
 def episode_number(value):
@@ -145,10 +145,7 @@ class BatchManager:
 
     def _capture_loop(self, path):
         try:
-            speaker = sc.default_speaker()
-            if speaker is None:
-                raise RuntimeError("没有找到 Windows 默认扬声器。")
-            microphone = sc.get_microphone(id=str(speaker.name), include_loopback=True)
+            microphone = get_desktop_capture_microphone()
             with wave.open(str(path), "wb") as wav_file:
                 wav_file.setnchannels(self.channels)
                 wav_file.setsampwidth(2)

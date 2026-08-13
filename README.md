@@ -9,7 +9,7 @@ DramaLens 是一个本地优先的 Chrome 扩展与 Python 服务，用于将用
 ## 功能
 
 - 主动捕获当前 Chrome 标签页音频，不下载视频
-- 使用 Windows WASAPI Loopback 录制红果等桌面应用正在播放的声音
+- 使用 Windows WASAPI Loopback 或 macOS CoreAudio + BlackHole 录制桌面应用正在播放的声音
 - 使用本地 `faster-whisper` 生成中文时间轴
 - 在扩展中修改文本、合并片段、填写或校对角色
 - 通过 OpenAI 兼容文本接口生成单集创作拆解
@@ -36,7 +36,7 @@ DramaLens 是一个本地优先的 Chrome 扩展与 Python 服务，用于将用
 
 ## 安装要求
 
-- Windows 10/11
+- Windows 10/11，或 macOS 13 及更高版本
 - Chrome 或兼容 Chromium 的浏览器
 - Python 3.11
 - 建议至少 8 GB 内存；本地 `medium` 模型首次运行需要下载模型文件
@@ -44,6 +44,8 @@ DramaLens 是一个本地优先的 Chrome 扩展与 Python 服务，用于将用
 ## 快速开始
 
 ### 1. 安装本地服务
+
+macOS 用户请直接阅读 [macOS 安装与录音说明](docs/MACOS.md)。Windows 用户按以下步骤操作。
 
 克隆仓库后，在项目目录中双击：
 
@@ -99,6 +101,7 @@ start-asr.cmd
 | `LOCAL_ASR_COMPUTE_TYPE` | 推理精度 | `int8` |
 | `ASR_PORT` | 本地服务端口 | `3211` |
 | `MAX_AUDIO_BYTES` | 单个音频最大字节数 | `26214400` |
+| `MACOS_AUDIO_DEVICE` | macOS 桌面录音输入设备名称 | `BlackHole` |
 
 不要提交 `.env`。项目不会要求维护者代管用户 API 密钥。
 
@@ -136,16 +139,17 @@ DramaLens 面向创作研究、无障碍转写、个人学习以及获得授权�
 ## 当前限制
 
 - 当前录音仍是实时流程，倍速播放会让时间码对应录制时间，而不是原始视频时间
-- 桌面录音当前采集 Windows 默认扬声器的全部输出，录制时请关闭消息提示音和其他媒体
+- 桌面录音在 Windows 采集默认扬声器输出；macOS 通过 BlackHole 采集 CoreAudio 输出。录制时请关闭消息提示音和其他媒体
 - 最近一次桌面录音会保留在本地 `recordings` 目录，开始下一次录音时自动替换
 - 角色名称由语言模型根据上下文推断，准确率受台词信息影响
 - 本地 Whisper 的速度取决于电脑配置
-- 当前安装脚本主要针对 Windows
+- macOS 桌面 App 录音需要额外安装和配置 BlackHole；浏览器标签页录音不需要
 - 项目尚无 Chrome Web Store 正式版本，需要开发者模式加载
 
 ## 路线图
 
-- [ ] macOS / Linux 启动脚本与安装文档
+- [x] macOS 启动脚本、CoreAudio 录音适配与安装文档
+- [ ] Linux 启动脚本与安装文档
 - [ ] 自动化测试与固定测试样本
 - [ ] 更可靠的角色一致性检查
 - [ ] 可编辑的分析模板和提示词
